@@ -1,0 +1,19 @@
+# Основные пакеты для данных
+numpy==2.1.2
+pandas==2.2.3
+fastapi~=0.109.2 
+pydantic-settings~=2.2.1 
+uvicorn~=0.28.0
+
+# Глубокое обучение
+--find-links https://download.pytorch.org/whl/torch_stable.html 
+torch==2.6.0
+transformers[torch]
+
+# Дополнительные инструменты
+tqdm==4.67.1
+Pillow==10.0.0  # PIL
+scikit-learn==1.6.1 # sklearn
+matplotlib==3.10.1
+librosa==0.11.0
+Levenshtein==0.27.1
