@@ -4,8 +4,8 @@ from typing import List
 
 # Создаем экземпляр роутера
 router_ML = APIRouter(
-    prefix="/ML_FuncTools",
-    tags=["ML_FuncTools"],
+    prefix="/ML_FuncTools_test",
+    tags=["ML_FuncTools_test"],
     responses={404: {"description": "Not found"}} 
 )
 
