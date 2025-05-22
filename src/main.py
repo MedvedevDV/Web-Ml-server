@@ -1,12 +1,12 @@
-from fastapi import FastAPI 
+from fastapi import FastAPI, Form
 from .ml.schemas import QueryText
-from .ML_test_routers import router_ML as ML_test_routers
-from .FASTAPI_requests import routers_req as fa_rec
+from .ML_FuncTools import router_ML
+from .FASTAPI_requests import routers_req
 
 app = FastAPI()
 
-app.include_router(ML_test_routers)
-app.include_router(fa_rec)
+app.include_router(router_ML)
+app.include_router(routers_req)
 
 @app.get("/") 
 async def read_root(): 
@@ -15,3 +15,4 @@ async def read_root():
 @app.post("/predict/") 
 async def get_prediction(item: QueryText): 
     return {"text": item.text}
+
