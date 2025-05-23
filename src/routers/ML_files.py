@@ -11,7 +11,7 @@ router_ML_files = APIRouter(
 )
 
 #===== Configurations for unload file =====
-LOAD_DIR = pt(__file__).parent.parent / "ml/models/load_files"
+LOAD_DIR = pt(__file__).parent.parent / "models/load_files"
 
 @router_ML_files.get('/get_files', summary="Get all loaded files")
 async def get_files():
@@ -41,7 +41,7 @@ async def create_file(file: UploadFile = File(...)):
             content={"message": f"Error loading file: {str(e)}"}
         )
 
-@router_ML_files.post("/delete/{file_name}", summary="Delete file")
+@router_ML_files.post("/delete_{file_name}", summary="Delete file")
 async def delet_file(file_name: str):
     """
     Delete file by name
@@ -63,7 +63,7 @@ async def delet_file(file_name: str):
             content={"message": f"Error deleting file: {str(e)}"}
         )
     
-@router_ML_files.post("/delete_all", summary="Delete all files")
+@router_ML_files.delete("/delete_all", summary="Delete all files")
 async def delet_file():
     """
     Delete all files

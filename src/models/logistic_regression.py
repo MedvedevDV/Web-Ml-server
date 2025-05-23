@@ -1,10 +1,10 @@
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
-from models import Model
+from sklearn.linear_model import LogisticRegression
+from .model import Model
 
-class RandomForestModel(Model):
+class LogisticRegressionModel(Model):
     def fit(self, data: np.ndarray, targets: np.ndarray):
-        self.model = RandomForestClassifier(**self.params)
+        self.model = LogisticRegression(**self.params)
         self.model.fit(data, targets)
     
     def predict(self, data: np.ndarray) -> np.ndarray:
