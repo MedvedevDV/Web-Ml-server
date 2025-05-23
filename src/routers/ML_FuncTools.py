@@ -11,9 +11,12 @@ router_ML = APIRouter(
 )
 
 #Получить все доступные модели
-@router_ML.get('/get_models')
-def get_models():
-    path = pt(__file__).parent / "ml/models"
+@router_ML.get('/get_models', summary="Доступные модели")
+async def get_models():
+    """
+    Получить список доступных моделей
+    """
+    path = pt(__file__).parent.parent / "ml/models"
     return [
     f.stem for f in path.glob("*.py") 
     if f.name != "__init__.py" and f.name != "model.py"
