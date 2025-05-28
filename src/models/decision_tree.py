@@ -3,6 +3,9 @@ from sklearn.tree import DecisionTreeClassifier
 from .model import Model
 
 class DecisionTreeModel(Model):
+    def __init__(self, **params):
+        self.params = params
+        
     def fit(self, data: np.ndarray, targets: np.ndarray):
         self.model = DecisionTreeClassifier(**self.params)
         self.model.fit(data, targets)

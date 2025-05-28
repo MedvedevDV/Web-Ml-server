@@ -3,6 +3,9 @@ from sklearn.ensemble import RandomForestClassifier
 from .model import Model
 
 class RandomForestModel(Model):
+    def __init__(self, **params):
+        self.params = params
+        
     def fit(self, data: np.ndarray, targets: np.ndarray):
         self.model = RandomForestClassifier(**self.params)
         self.model.fit(data, targets)
