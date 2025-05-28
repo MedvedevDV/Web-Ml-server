@@ -34,9 +34,46 @@ max_loaded_models = settings.max_loaded_models
 process_exec = ProcessPoolExecutor(max_workers=max_cpu_processes)
 process_futures = {}
 
+FUNC_TOOLS_PATCH = settings.base_dir / "models"
+MODEL = {
+    'logistic_regression': LogisticRegressionModel,
+    'random_forest': RandomForestModel,
+    'decision_tree': DecisionTreeModel
+}
+LOAD_SAVE_PATCH = FUNC_TOOLS_PATCH / 'auto_save_models'
+
+process_lock = Lock()
+#===== Process management =====
+def process_status(model_name: str):
+    if active_cpu_processes>=max_cpu_processes:
+        raise HTTPException(400, {                    
+                    "error": "No available slots. Try again later",
+                    "active_processes": active_cpu_processes,
+                    "max_processes": max_cpu_processes,
+                    "available": 0
+                    })
+    
+    elif model_name in loaded_models:
+        raise HTTPException(400, f"{model_name} is load")
+    
+    elif len(loaded_models) >= max_loaded_models:
+        raise HTTPException(400, f"Limit of uploaded models has been reached ({settings.max_loaded_models})")
+    
+    
+def process_callback(future, model_name: str):
+    global active_cpu_processes
+    active_cpu_processes -= 1
+    if model_name in process_futures:
+        del process_futures[model_name]
+    
+    try:
+        future.result() 
+    except Exception as e:
+        print(f"Error in model {model_name} training: {str(e)}")
+
 
 #===== Generate data =====
-def train_model(model_name, params):
+def train_model(model_name: str, params):
     csv_files = FUNC_TOOLS_PATCH / 'load_files'
     X_train = np.genfromtxt(csv_files / 'X_train.csv', delimiter=',', skip_header=1)
     y_train = np.genfromtxt(csv_files / 'y_train.csv', delimiter=',', skip_header=1)
@@ -49,35 +86,13 @@ def train_model(model_name, params):
         pickle.dump(model,f)
 
 
-def get_predict(model_name,**params):
+def get_predict(model_name,model, **params):
     X_test = np.genfromtxt('X_test.csv', delimiter=',', names=True, dtype=None)
 
-    model = MODEL[model_name](params)
     pred = model.predict(X_test)
 
     return pred 
 
-FUNC_TOOLS_PATCH = settings.base_dir / "models"
-MODEL = {
-    'logistic_regression': LogisticRegressionModel,
-    'random_forest': RandomForestModel,
-    'decision_tree': DecisionTreeModel
-}
-LOAD_SAVE_PATCH = FUNC_TOOLS_PATCH / 'auto_save_models'
-
-process_lock = Lock()
-#===== Process management =====
-def process_callback(future, model_name: str):
-    global active_cpu_processes, CPU_CORES
-    active_cpu_processes -= 1
-    CPU_CORES += 1
-    if model_name in process_futures:
-        del process_futures[model_name]
-    
-    try:
-        future.result() 
-    except Exception as e:
-        print(f"Error in model {model_name} training: {str(e)}")
 
 #===== Routers =====
 @router_ML.get('/get_models', summary="Доступные модели")
@@ -93,29 +108,87 @@ async def fit(model_name: str):
     """
     Train the specified model.
     """
-    global active_cpu_processes, CPU_CORES
-    if  active_cpu_processes>=max_cpu_processes:
-        raise HTTPException(400, {                    
-                    "error": "No available slots. Try again later",
-                    "active_processes": active_cpu_processes,
-                    "max_processes": max_cpu_processes,
-                    "available": 0
-                    })
-    if len(loaded_models) >= settings.max_loaded_models:
-        raise HTTPException(429,f"Limit of uploaded models has been reached ({settings.max_loaded_models})")
+    global active_cpu_processes
+    process_status()
     
-    try:
-        params = {'solver': 'lbfgs', 'n_jobs': 1}
-        future = process_exec.submit(train_model, model_name=model_name, params=params)
-        process_futures[model_name] = future
-        CPU_CORES -= 1
-        active_cpu_processes += 1
-        future.add_done_callback(partial(process_callback, model_name=model_name))
-    except Exception as e:
-        active_cpu_processes -= 1
-        raise HTTPException(500, f"Training failed: {str(e)}")
+    with process_lock:
+        try:
+            params = {'n_jobs': 1}
+            future = process_exec.submit(train_model, model_name=model_name, params=params)
+            process_futures[model_name] = future
+            active_cpu_processes += 1
+            future.add_done_callback(partial(process_callback, model_name=model_name))
+        except Exception as e:
+            active_cpu_processes -= 1
+            raise HTTPException(500, f"Training failed: {str(e)}")
 
     return {"model": model_name, "status": "training_started", "slots_used": f"{active_cpu_processes}/{max_cpu_processes}"}
+
+
+@router_ML.put('/predict_{model_name}')
+def pedict_model(model_name: str):
+    model = loaded_models[model_name]
+    csv_file = FUNC_TOOLS_PATCH / 'load_files'
+    X_train = np.genfromtxt(csv_file / 'X_test.csv', delimiter=',', skip_header=1)
+    pred = model.predict(X_train)
+
+    return {"predictions": pred.tolist()}
+
+@router_ML.put('/load_{model_name}')
+def loading_model_to_inference(model_name: str):
+
+    model = LOAD_SAVE_PATCH / f'{model_name}.pkl'
+    with open(model, 'rb') as f:
+        loaded_models[model_name] = pickle.load(f)
+
+    return loaded_models[model_name]
+
+
+@router_ML.delete('/unload_{model_name}')
+async def unload_model(model_name: str):
+    """Unloads the model from memory"""
+    global loaded_models, process_futures
+    
+    if model_name not in loaded_models:
+        raise HTTPException(404, f'{model_name} model is not loaded into memory')
+    
+    del loaded_models[model_name]
+    if model_name in process_futures:
+        process_futures[model_name].cancel()
+
+    return {'status': 'success', 'message': f'{model_name} model has been unloaded'}
+
+
+@router_ML.delete('/remove_{model_name}')
+async def remove_madel(model_name: str):
+    model_file = LOAD_SAVE_PATCH / f"{model_name}.pkl"
+
+    if not model_file.exists():
+        raise HTTPException(404, f"Model file {model_name}.pkl not found")
+    
+    model_file.unlink()
+    return {'status': f'{model_name} model was remove'}
+
+
+@router_ML.delete('/removeall')
+async def remove_all_models():
+    """
+    Delete all files
+    """
+    try:
+        files = LOAD_SAVE_PATCH.iterdir()
+        # files_to_del = pt.joinpath(FUNC_TOOLS_PATCH,'auto_save_models').iterdir()
+        # print(files_to_del)
+        file_names = []
+        for file in files:
+            print(file)
+            file_names.append(file.name)
+            file.unlink()
+        
+        return {'status': "Models deleted successfully", "files name": file_names}
+
+    except Exception as e:
+        return {'status': f'Error deleting files: {str(e)}'}
 
 
 @router_ML.get("/status")
@@ -124,9 +197,8 @@ async def get_status():
     return {
         "cpu_cores": settings.cpu_cores,
         "max_worker_processes": max_cpu_processes,
-        "active_tasks": active_cpu_processes,
+        "active_processes": active_cpu_processes,
         "available_slots": max_cpu_processes - active_cpu_processes,
-        "running_tasks": list(process_futures.keys())
+        "running_models": list(process_futures.keys()),
+        "loaded_models": list(loaded_models.keys())
     }
-# @router_ML.put('/predict_{mopdel_name}')
-# async def pred(mopdel_name: str):
