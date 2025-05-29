@@ -51,7 +51,7 @@ LOAD_SAVE_PATCH = FUNC_TOOLS_PATCH / 'auto_save_models'
 process_lock = Lock()
 
 #===== Process management =====
-def process_status_exs(model_name: str):
+def process_status(model_name: str):
     if active_cpu_processes>=max_cpu_processes:
         raise HTTPException(400, {                    
                     'error': 'No available slots. Try again later',
@@ -116,7 +116,7 @@ async def fit(model_name: str):
     Train the specified model.
     '''
     global active_cpu_processes
-    process_status_exs(model_name)
+    process_status(model_name)
     
     with process_lock:
         try:
@@ -134,18 +134,19 @@ async def fit(model_name: str):
 
 @router_ML.put('/predict_{model_name}')
 def pedict_model(model_name: str):
-    model = training_models[model_name]
+    model = loaded_models[model_name]
     csv_file = FUNC_TOOLS_PATCH / 'load_files'
     X_train = np.genfromtxt(csv_file / 'X_test.csv', delimiter=',', skip_header=1)
     pred = model.predict(X_train)
 
-    return {'predictions': pred.tolist()}
+    return {'predictions': len(pred.tolist())}
+
 
 @router_ML.put('/load_{model_name}')
 def loading_model_to_inference(model_name: str):
 
     global loaded_models
-    process_status_exs(model_name)
+    process_status(model_name)
 
     model = LOAD_SAVE_PATCH / f'{model_name}.pkl'
     if not model.exists():
@@ -164,12 +165,12 @@ def loading_model_to_inference(model_name: str):
 @router_ML.delete('/unload_{model_name}')
 async def unload_model(model_name: str):
     '''Unloads the model from memory'''
-    global training_models, process_futures
+    global loaded_models, process_futures
     
-    if model_name not in training_models:
+    if model_name not in loaded_models:
         raise HTTPException(404, f'{model_name} model is not loaded into memory')
     
-    del training_models[model_name]
+    del loaded_models[model_name]
     if model_name in process_futures:
         process_futures[model_name].cancel()
 
